@@ -48,9 +48,12 @@ This is the most important architectural rule in the project — violating it is
 
 When in doubt: if it runs on every keystroke or every frame, it's core. If it's configuration or occasional-use orchestration, it's an extension.
 
-## Directory Structure (proposed — adjust as the project grows, keep this section current)
+## Directory Structure (adjust as the project grows, keep this section current)
+
+All app sources live under `Vector/` (the app target). The Xcode project uses file-system-synchronized groups, so any `.swift` file added under `Vector/`, `VectorTests/`, or `VectorUITests/` is compiled into that target automatically, with no pbxproj edits. Keep Swift filenames unique across folders: duplicate basenames collide at build time.
 
 ```
+Vector/
 /App                 — App entry point, window management, menu bar
 /Core
   /Buffer            — Text buffer / rope, value-type internals
@@ -65,14 +68,14 @@ When in doubt: if it runs on every keystroke or every frame, it's core. If it's 
   /BuiltIn           — Bundled extensions: LSP configs per language, statusline, fuzzy finder, git panel, AI orchestration
 /UI                  — SwiftUI chrome: sidebars, command palette, settings, Claude chat panel
 /Visualization       — SceneKit-based project graph (2D/3D)
-/Tests
+VectorTests/         — Unit tests (Swift Testing), one file per subsystem
+VectorUITests/       — UI tests
 ```
 
 ## Build & Test
 
-_Fill in once the Xcode project / Swift package is scaffolded:_
-- Build: `xcodebuild -scheme Vector build` or `swift build`
-- Test: `xcodebuild test -scheme Vector` or `swift test`
+- Build: `xcodebuild -scheme Vector -destination 'platform=macOS' build`
+- Test: `xcodebuild -scheme Vector -destination 'platform=macOS' test`
 - Lint/format: (decide on `swift-format` or SwiftLint and record the command here)
 
 ## Coding Conventions
