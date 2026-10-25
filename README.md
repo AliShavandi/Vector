@@ -4,7 +4,7 @@ A Mac-native, performance-focused code editor in the spirit of [Zed](https://zed
 
 Rather than a custom GPU-rendering stack, Vector leans on native AppKit and Core Text rendering, which is already fast and already built. That trades a slightly lower theoretical performance ceiling for a much shorter path to a genuinely good v1.
 
-> **Status:** Phase 0, project setup. The directory skeleton is in place; there's no working editor yet.
+> **Status:** Phase 0 (project setup) is complete: the directory skeleton is in place. Phase 1 is next; there's no working editor yet.
 
 ## Principles
 
