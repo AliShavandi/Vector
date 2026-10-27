@@ -87,7 +87,9 @@ VectorUITests/       — UI tests
 
 ## Roadmap Reference
 
-See the project plan doc for the full phase breakdown. **Phase 0 — Project Setup: complete** (2026-10-25: directory skeleton with placeholder files, builds clean). Current phase: **Phase 1** (see the plan doc for scope) (update this line as phases complete, so a fresh Claude Code session immediately knows where the project stands).
+See the project plan doc for the full phase breakdown. Current phase: **Phase 1** (update this line as phases complete, so a fresh Claude Code session immediately knows where the project stands).
+
+Completed: Phase 0 — Project Setup (directory skeleton with placeholder files, builds clean).
 
 ## Working With Claude Code On This Project
 
