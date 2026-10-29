@@ -78,8 +78,7 @@ When in doubt: if it runs on every keystroke or every frame, it's core. If it's 
 
 ## Build & Test
 
-_Fill in once the Xcode project / Swift package is scaffolded:_
-- Build: `xcodebuild -scheme Vector build` or `swift build`
+- Build: `xcodebuild -scheme Vector -destination 'platform=macOS' build`
 - Test: `xcodebuild test -scheme Vector -only-testing:VectorTests -destination 'platform=macOS'`
 - Lint/format: (decide on `swift-format` or SwiftLint and record the command here)
 
