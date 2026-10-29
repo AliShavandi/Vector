@@ -9,14 +9,17 @@ import SwiftUI
 
 struct ContentView: View {
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
-        }
-        .padding()
+        EditorViewportRepresentable()
     }
+}
+
+/// Hosts the AppKit editor viewport. It owns its own state, so there's nothing to update from SwiftUI.
+struct EditorViewportRepresentable: NSViewRepresentable {
+    func makeNSView(context: Context) -> EditorViewport {
+        EditorViewport()
+    }
+
+    func updateNSView(_ nsView: EditorViewport, context: Context) {}
 }
 
 #Preview {

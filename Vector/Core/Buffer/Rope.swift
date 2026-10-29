@@ -204,6 +204,14 @@ nonisolated struct Rope: Sendable {
     }
 }
 
+nonisolated extension Rope {
+    /// True if both are the same version (one is an unmodified copy of the other). O(1); unlike `==`, it's false
+    /// for equal text reached by different edits.
+    func isIdentical(to other: Rope) -> Bool {
+        root === other.root
+    }
+}
+
 nonisolated extension Rope: Equatable {
     static func == (lhs: Rope, rhs: Rope) -> Bool {
         if lhs.root === rhs.root { return true }
