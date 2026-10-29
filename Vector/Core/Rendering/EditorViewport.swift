@@ -20,6 +20,8 @@ final class EditorViewport: NSView, NSTextViewDelegate {
     private(set) var fileURL: URL?
     /// The text as last opened or saved. Undo restores exact Rope versions, so identity tells us if we're back.
     private var savedText = Rope()
+    /// Nil for files with no registered grammar (and untitled buffers).
+    private var highlighter: SyntaxHighlighter?
 
     private let scrollView = NSScrollView()
     private let textView = EditorTextView(usingTextLayoutManager: false)
@@ -40,6 +42,19 @@ final class EditorViewport: NSView, NSTextViewDelegate {
         scrollView.borderType = .noBorder
         scrollView.documentView = textView
         addSubview(scrollView)
+
+        // Highlighting covers only what's on screen, so recheck whenever that changes.
+        let clipView = scrollView.contentView
+        clipView.postsBoundsChangedNotifications = true
+        clipView.postsFrameChangedNotifications = true
+        for name in [NSView.boundsDidChangeNotification, NSView.frameDidChangeNotification] {
+            NotificationCenter.default.addObserver(self, selector: #selector(visibleRegionDidChange(_:)),
+                                                   name: name, object: clipView)
+        }
+    }
+
+    @objc private func visibleRegionDidChange(_ notification: Notification) {
+        highlighter?.highlightVisibleText()
     }
 
     required init?(coder: NSCoder) {
@@ -108,9 +123,10 @@ final class EditorViewport: NSView, NSTextViewDelegate {
             return false
         }
 
+        var bufferEdits: [BufferEdit] = []
         let apply = { (buffer: inout TextBuffer) in
             for (range, text) in edits {
-                buffer.edit(Self.byteRange(of: range, in: buffer.text), with: text)
+                bufferEdits.append(buffer.edit(Self.byteRange(of: range, in: buffer.text), with: text))
             }
         }
         if edits.count == 1 {
@@ -118,6 +134,7 @@ final class EditorViewport: NSView, NSTextViewDelegate {
         } else {
             buffer.transact(apply)
         }
+        highlighter?.bufferDidChange(bufferEdits)
         return true
     }
 
@@ -158,6 +175,7 @@ final class EditorViewport: NSView, NSTextViewDelegate {
             // final rope alone. The view doesn't produce these yet; replace everything.
             storage.setAttributedString(NSAttributedString(string: buffer.text.description, attributes: textAttributes))
         }
+        highlighter?.bufferDidChange(edits)
         textView.didChangeText()
     }
 
@@ -209,6 +227,8 @@ final class EditorViewport: NSView, NSTextViewDelegate {
             NSAttributedString(string: buffer.text.description, attributes: textAttributes))
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
+        highlighter = nil  // new buffer: never reuse the old parse, even for the same language
+        updateHighlighter()
         updateWindow()
     }
 
@@ -222,7 +242,20 @@ final class EditorViewport: NSView, NSTextViewDelegate {
         }
         fileURL = url
         savedText = buffer.text
+        updateHighlighter()  // Save As may have changed the extension
         updateWindow()
+    }
+
+    /// Starts, replaces, or stops highlighting to match the current file name's language. Keeps the running
+    /// highlighter (and its parse) when the language is unchanged.
+    private func updateHighlighter() {
+        let language = fileURL.flatMap(SyntaxLanguage.forFile)
+        guard highlighter == nil || language !== highlighter?.language else { return }
+        textView.layoutManager?.removeTemporaryAttribute(
+            .foregroundColor, forCharacterRange: NSRange(location: 0, length: textView.textStorage?.length ?? 0))
+        highlighter = language.map { language in
+            SyntaxHighlighter(language: language, textView: textView) { [unowned self] in (buffer.text, buffer.version) }
+        }
     }
 
     private func updateWindow() {

@@ -6,6 +6,11 @@
 	objectVersion = 110;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		30286F05308EBE29008DCC9F /* TreeSitter in Frameworks */ = {isa = PBXBuildFile; productRef = 30286F03308EBE29008DCC9F /* TreeSitter */; };
+		30286F06308EBE29008DCC9F /* TreeSitterSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 30286F04308EBE29008DCC9F /* TreeSitterSwift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		30286ED7308EBE29008DCC9F /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -51,6 +56,8 @@
 		30286EC6308EBE28008DCC9F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				30286F05308EBE29008DCC9F /* TreeSitter in Frameworks */,
+				30286F06308EBE29008DCC9F /* TreeSitterSwift in Frameworks */,
 			);
 		};
 		30286ED3308EBE29008DCC9F /* Frameworks */ = {
@@ -103,6 +110,10 @@
 				30286ECB308EBE28008DCC9F /* Vector */,
 			);
 			name = Vector;
+			packageProductDependencies = (
+				30286F03308EBE29008DCC9F /* TreeSitter */,
+				30286F04308EBE29008DCC9F /* TreeSitterSwift */,
+			);
 			productName = Vector;
 			productReference = 30286EC9308EBE28008DCC9F /* Vector.app */;
 			productType = "com.apple.product-type.application";
@@ -181,6 +192,10 @@
 			);
 			mainGroup = 30286EC0308EBE28008DCC9F;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				30286F01308EBE29008DCC9F /* XCRemoteSwiftPackageReference "tree-sitter" */,
+				30286F02308EBE29008DCC9F /* XCRemoteSwiftPackageReference "tree-sitter-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 30286ECA308EBE28008DCC9F /* Products */;
 			projectDirPath = "";
@@ -533,6 +548,38 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		30286F01308EBE29008DCC9F /* XCRemoteSwiftPackageReference "tree-sitter" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/tree-sitter/tree-sitter";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.26.9;
+			};
+		};
+		30286F02308EBE29008DCC9F /* XCRemoteSwiftPackageReference "tree-sitter-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/alex-pinkus/tree-sitter-swift";
+			requirement = {
+				kind = exactVersion;
+				version = "0.7.4-with-generated-files";
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		30286F03308EBE29008DCC9F /* TreeSitter */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 30286F01308EBE29008DCC9F /* XCRemoteSwiftPackageReference "tree-sitter" */;
+			productName = TreeSitter;
+		};
+		30286F04308EBE29008DCC9F /* TreeSitterSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 30286F02308EBE29008DCC9F /* XCRemoteSwiftPackageReference "tree-sitter-swift" */;
+			productName = TreeSitterSwift;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 30286EC1308EBE28008DCC9F /* Project object */;
 	validationLevel = 1;
