@@ -40,19 +40,6 @@ private let sample = """
     }
     """
 
-/// Deterministic RNG so randomized failures reproduce.
-private struct SplitMix64: RandomNumberGenerator {
-    var state: UInt64
-
-    mutating func next() -> UInt64 {
-        state &+= 0x9E37_79B9_7F4A_7C15
-        var z = state
-        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
-        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
-        return z ^ (z >> 31)
-    }
-}
-
 /// Fragments that make edits syntactically interesting: they open and close strings, comments, and blocks.
 private let snippets = ["x", " ", "\n", "func f() {", "}", "{", "\"", "/*", "*/", "// c\n", "let a = 1\n", "(", ")", "é", "😀", ".pi"]
 
@@ -91,6 +78,35 @@ struct SyntaxTests {
             let updated = await incremental.parse(buffer.text, edits: edits)
             #expect(await incremental.lastParseReusedTree)
             let fresh = await SyntaxParser(language: .swift).parse(buffer.text, edits: [])
+            try #require(updated.sExpression == fresh.sExpression, "step \(step): trees diverged")
+        }
+    }
+
+    /// Multi-cursor edits reach the parser as several edits per transaction (and undo hands back their inverses);
+    /// the incremental tree must still match a fresh parse.
+    @Test(arguments: [4, 5] as [UInt64])
+    func multiCursorEditsParseIncrementally(seed: UInt64) async throws {
+        var rng = SplitMix64(state: seed)
+        var editor = EditorState(buffer: TextBuffer(sample))
+        let incremental = SyntaxParser(language: .swift)
+        _ = await incremental.parse(editor.buffer.text, edits: [])
+
+        for step in 0..<120 {
+            if editor.selections.count < 4 || Int.random(in: 0..<6, using: &rng) == 0 {
+                let text = editor.buffer.text
+                editor.selections.add(.caret(text.clipOffset(Int.random(in: 0...text.utf8Count, using: &rng), bias: .backward)))
+            }
+            let edits: [BufferEdit]
+            switch Int.random(in: 0..<10, using: &rng) {
+            case 0..<5: edits = editor.insert(snippets.randomElement(using: &rng)!)
+            case 5..<8: edits = editor.delete(.backward)
+            case 8: edits = editor.delete(.wordForward)
+            default: edits = editor.undo() ?? []
+            }
+            if step % 10 == 9 { editor.selections.collapseToPrimary() }
+
+            let updated = await incremental.parse(editor.buffer.text, edits: edits)
+            let fresh = await SyntaxParser(language: .swift).parse(editor.buffer.text, edits: [])
             try #require(updated.sExpression == fresh.sExpression, "step \(step): trees diverged")
         }
     }

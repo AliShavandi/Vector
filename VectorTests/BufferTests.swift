@@ -11,19 +11,6 @@ import Testing
 
 // MARK: - Reference model
 
-/// Deterministic RNG so randomized failures reproduce.
-private struct SplitMix64: RandomNumberGenerator {
-    var state: UInt64
-
-    mutating func next() -> UInt64 {
-        state &+= 0x9E37_79B9_7F4A_7C15
-        var z = state
-        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
-        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
-        return z ^ (z >> 31)
-    }
-}
-
 private let alphabet = ["a", "b", "c", " ", "\n", "é", "中", "😀"]
 
 private func randomText(length: Int, using rng: inout SplitMix64) -> String {
@@ -153,6 +140,30 @@ struct RopeTests {
         }
     }
 
+    @Test func searchMatchesReference() {
+        var rng = SplitMix64(state: 6)
+        // Several leaves, with "/*" straddling the first leaf boundary (1 KB).
+        let bytes = Array((String(repeating: "ab", count: 511) + "c/" + "*d" + randomText(length: 3_000, using: &rng)).utf8)
+        let rope = Rope(String(decoding: bytes, as: UTF8.self))
+        func reference(_ needle: [UInt8], _ range: Range<Int>) -> Range<Int>? {
+            guard !needle.isEmpty, needle.count <= range.count else { return nil }
+            return (range.lowerBound...(range.upperBound - needle.count))
+                .first { bytes[$0..<($0 + needle.count)].elementsEqual(needle) }
+                .map { $0..<($0 + needle.count) }
+        }
+
+        #expect(rope.firstRange(of: Array("/*".utf8), in: 0..<bytes.count) == 1023..<1025)
+        #expect(rope.firstRange(of: Array("/*".utf8), in: 0..<1024) == nil)  // must lie wholly inside the range
+        let cuts = boundaries(bytes)
+        for _ in 0..<300 {
+            let a = cuts.randomElement(using: &rng)!, b = cuts.randomElement(using: &rng)!
+            let start = cuts.randomElement(using: &rng)!
+            let needle = Array(bytes[start..<(cuts.first { $0 >= start + Int.random(in: 1...6, using: &rng) } ?? bytes.count)])
+            let range = min(a, b)..<max(a, b)
+            #expect(rope.firstRange(of: needle, in: range) == reference(needle, range))
+        }
+    }
+
     @Test(arguments: [10, 11, 12, 13])
     func randomEditsMatchReference(seed: UInt64) throws {
         var rng = SplitMix64(state: seed)
@@ -268,5 +279,119 @@ struct TextBufferTests {
         var buffer = TextBuffer("a")
         buffer.transact { _ in }
         #expect(!buffer.canUndo)
+    }
+
+    @Test func coalescedEditsUndoAsOneStep() {
+        var buffer = TextBuffer("")
+        for (i, character) in "abc".enumerated() {
+            buffer.transact(coalesce: true) { $0.edit(i..<i, with: String(character)) }
+        }
+        #expect(buffer.text.description == "abc")
+
+        let undone = buffer.undo()
+        #expect(buffer.text.description == "")
+        #expect(undone?.map(\.oldRange) == [2..<3, 1..<2, 0..<1])
+        #expect(!buffer.canUndo)
+
+        buffer.redo()
+        #expect(buffer.text.description == "abc")
+    }
+
+    @Test func coalescingStopsAtBreaksEditsAndHistory() {
+        var buffer = TextBuffer("")
+        buffer.transact(coalesce: true) { $0.edit(0..<0, with: "a") }
+        buffer.breakUndoCoalescing()
+        buffer.transact(coalesce: true) { $0.edit(1..<1, with: "b") }
+        buffer.transact(coalesce: true) { $0.edit(2..<2, with: "c") }
+        buffer.edit(3..<3, with: "-")
+        buffer.transact(coalesce: true) { $0.edit(4..<4, with: "d") }  // can't join the plain edit
+        buffer.transact { $0.edit(5..<5, with: "e") }
+        buffer.transact(coalesce: true) { $0.edit(6..<6, with: "f") }  // nor a plain transaction
+
+        var states: [String] = []
+        while buffer.undo() != nil { states.append(buffer.text.description) }
+        #expect(states == ["abc-de", "abc-d", "abc-", "abc", "a", ""])
+
+        // Undo and redo end the run too.
+        buffer.redo()
+        buffer.transact(coalesce: true) { $0.edit(1..<1, with: "x") }
+        buffer.undo()
+        #expect(buffer.text.description == "a")
+        buffer.transact(coalesce: true) { $0.edit(1..<1, with: "y") }
+        #expect(!buffer.canRedo)
+        buffer.undo()
+        #expect(buffer.text.description == "a")
+    }
+
+    @Test func touchingEditsMergeIntoOneReplacement() {
+        var buffer = TextBuffer("abcdef")
+        var edits: [BufferEdit] = []
+        buffer.transact { buffer in
+            edits.append(buffer.edit(4..<5, with: ""))  // backspacing from after "e"
+            edits.append(buffer.edit(3..<4, with: ""))
+            edits.append(buffer.edit(2..<3, with: ""))
+        }
+        #expect(BufferEdit.replacements(for: edits, resultLength: 3).map(\.old) == [2..<5])
+        #expect(BufferEdit.replacements(for: edits, resultLength: 3).map(\.new) == [2..<2])
+    }
+
+    /// Mirroring a step into the text storage replays `BufferEdit.replacements`; they must rebuild the result exactly,
+    /// forward and on undo, and be precise (no wider than the edits) whenever the edits are monotonic.
+    @Test(arguments: [20, 21, 22, 23] as [UInt64])
+    func replacementsReproduceEdits(seed: UInt64) {
+        var rng = SplitMix64(state: seed)
+        for step in 0..<400 {
+            var buffer = TextBuffer(randomText(length: Int.random(in: 0...200, using: &rng), using: &rng))
+            let before = Array(buffer.text.description.utf8)
+            let isMonotonic = step % 3 != 2
+            var edits: [BufferEdit] = []
+            buffer.transact { buffer in
+                guard isMonotonic else {
+                    // Anywhere, including over earlier edits.
+                    for _ in 0..<Int.random(in: 1...6, using: &rng) {
+                        let cuts = boundaries(Array(buffer.text.description.utf8))
+                        let a = cuts.randomElement(using: &rng)!, b = cuts.randomElement(using: &rng)!
+                        let inserted = randomText(length: Int.random(in: 0...3, using: &rng), using: &rng)
+                        edits.append(buffer.edit(min(a, b)..<max(a, b), with: inserted))
+                    }
+                    return
+                }
+                // Disjoint (possibly touching) ranges of the original text, front to back or back to front.
+                let cuts = (0..<2 * Int.random(in: 1...5, using: &rng))
+                    .map { _ in boundaries(before).randomElement(using: &rng)! }
+                    .sorted()
+                var ranges = stride(from: 0, to: cuts.count, by: 2).map { cuts[$0]..<cuts[$0 + 1] }
+                if step % 3 == 1 { ranges.reverse() }
+                var shift = 0
+                for range in ranges {
+                    let start = step % 3 == 0 ? range.lowerBound + shift : range.lowerBound
+                    let inserted = randomText(length: Int.random(in: 0...3, using: &rng), using: &rng)
+                    let edit = buffer.edit(start..<start + range.count, with: inserted)
+                    shift += edit.newRange.count - edit.oldRange.count
+                    edits.append(edit)
+                }
+            }
+            let after = Array(buffer.text.description.utf8)
+            expectReplacements(edits, rebuild: after, from: before, precise: isMonotonic)
+
+            let undone = buffer.undo()!
+            expectReplacements(undone, rebuild: before, from: after, precise: isMonotonic)
+        }
+    }
+
+    private func expectReplacements(_ edits: [BufferEdit], rebuild result: [UInt8], from original: [UInt8],
+                                    precise: Bool, sourceLocation: SourceLocation = #_sourceLocation) {
+        let replacements = BufferEdit.replacements(for: edits, resultLength: result.count)
+        #expect(zip(replacements, replacements.dropFirst()).allSatisfy { $0.old.upperBound < $1.old.lowerBound },
+                sourceLocation: sourceLocation)
+        var rebuilt = original
+        for (old, new) in replacements.reversed() {
+            rebuilt.replaceSubrange(old, with: result[new])
+        }
+        #expect(rebuilt == result, sourceLocation: sourceLocation)
+        if precise {
+            #expect(replacements.map(\.old.count).reduce(0, +) == edits.map(\.oldRange.count).reduce(0, +),
+                    sourceLocation: sourceLocation)
+        }
     }
 }

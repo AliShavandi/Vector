@@ -62,6 +62,7 @@ When in doubt: if it runs on every keystroke or every frame, it's core. If it's 
 /Account             — Sign-up/log-in UI, Supabase client, account state (app shell, not core)
 /Core
   /Buffer            — Text buffer / rope, value-type internals
+  /Editing           — Selections/multi-cursor engine over the buffer (EditorState), keymap dispatch
   /Rendering         — NSTextView-based viewport, Core Text integration
   /Syntax            — tree-sitter bindings, grammar loading
   /LSP               — Generic async LSP client (transport only)
@@ -92,7 +93,7 @@ When in doubt: if it runs on every keystroke or every frame, it's core. If it's 
 
 ## Roadmap Reference
 
-See the project plan doc for the full phase breakdown, including Phase 2.5 (Backend & User Accounts). Current phase: **Phase 0 — Project Setup** (update this line as phases complete, so a fresh Claude Code session immediately knows where the project stands).
+See the project plan doc for the full phase breakdown, including Phase 2.5 (Backend & User Accounts). Current phase: **Phase 1 — in progress** (done so far: rope buffer, AppKit viewport with open/save and undo/redo, tree-sitter highlighting, typing undo coalescing, multi-cursor editing, keymap with basic line commands) (update this line as phases complete, so a fresh Claude Code session immediately knows where the project stands).
 
 ## Working With Claude Code On This Project
 

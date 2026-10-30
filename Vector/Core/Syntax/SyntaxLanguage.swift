@@ -26,14 +26,17 @@ nonisolated final class SyntaxLanguage: @unchecked Sendable {
     /// comment node for a block comment that's never closed, lexing the opener as an ordinary token instead;
     /// `SyntaxParser` uses these to find that case so the rest of the file can still be shown as a comment.
     let blockComment: (open: String, close: String)?
+    /// What "toggle line comment" puts before a line, if the language has line comments.
+    let lineComment: String?
 
     /// - Parameter queriesBundle: the grammar package's SwiftPM resource bundle, which holds `queries/highlights.scm`.
     init(name: String, fileExtensions: Set<String>, tsLanguage: OpaquePointer, queriesBundle: String,
-         blockComment: (open: String, close: String)? = nil) {
+         blockComment: (open: String, close: String)? = nil, lineComment: String? = nil) {
         self.name = name
         self.fileExtensions = fileExtensions
         self.tsLanguage = tsLanguage
         self.blockComment = blockComment
+        self.lineComment = lineComment
         let source = Bundle.main.url(forResource: queriesBundle, withExtension: "bundle")
             .flatMap(Bundle.init(url:))?
             .url(forResource: "highlights", withExtension: "scm", subdirectory: "queries")
@@ -49,7 +52,7 @@ nonisolated final class SyntaxLanguage: @unchecked Sendable {
     static let swift = SyntaxLanguage(
         name: "Swift", fileExtensions: ["swift"],
         tsLanguage: tree_sitter_swift(), queriesBundle: "TreeSitterSwift_TreeSitterSwift",
-        blockComment: ("/*", "*/")
+        blockComment: ("/*", "*/"), lineComment: "//"
     )
 
     static let all: [SyntaxLanguage] = [swift]

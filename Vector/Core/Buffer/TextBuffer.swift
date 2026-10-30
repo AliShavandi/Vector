@@ -42,6 +42,62 @@ nonisolated struct BufferEdit: Hashable, Sendable {
             startPointUTF16: startPointUTF16, oldEndPointUTF16: newEndPointUTF16, newEndPointUTF16: oldEndPointUTF16
         )
     }
+
+    /// The net change made by `edits` (in application order) as disjoint replacements, ascending: byte ranges in the
+    /// text before the first edit, each paired with the range holding its new text after the last edit.
+    /// `resultLength` is the byte length after the last edit.
+    ///
+    /// Edits that move monotonically through the text, as multi-range changes do (ascending) and their undo does
+    /// (descending), map to one replacement each, merged where they touch. Anything else, such as typing then
+    /// deleting within one coalesced step, becomes a single replacement spanning everything the edits touched.
+    static func replacements(for edits: [BufferEdit], resultLength: Int) -> [(old: Range<Int>, new: Range<Int>)] {
+        guard !edits.isEmpty else { return [] }
+        let deltas = edits.map { $0.newRange.count - $0.oldRange.count }
+        let pairs: [(old: Range<Int>, new: Range<Int>)]
+        if zip(edits, edits.dropFirst()).allSatisfy({ $1.oldRange.lowerBound >= $0.newRange.upperBound }) {
+            // Ascending: earlier edits shifted each old range; nothing after an edit moves its new text.
+            var shift = 0
+            pairs = edits.indices.map { i in
+                defer { shift += deltas[i] }
+                return (edits[i].oldRange.shifted(by: -shift), edits[i].newRange)
+            }
+        } else if zip(edits, edits.dropFirst()).allSatisfy({ $1.oldRange.upperBound <= $0.oldRange.lowerBound }) {
+            // Descending: old ranges are already in original coordinates; the later, lower edits shift the new text.
+            var shift = 0
+            pairs = edits.indices.reversed().map { i in
+                defer { shift += deltas[i] }
+                return (edits[i].oldRange, edits[i].newRange.shifted(by: shift))
+            }
+        } else {
+            // Nothing before the lowest edit start changed, and neither did the shortest tail any edit left alone.
+            let start = edits.map(\.oldRange.lowerBound).min()!
+            var length = resultLength
+            var suffix = Int.max
+            for (edit, delta) in zip(edits, deltas).reversed() {
+                suffix = min(suffix, length - edit.newRange.upperBound)
+                length -= delta
+            }
+            suffix = min(suffix, length - start, resultLength - start)
+            return [(start..<length - suffix, start..<resultLength - suffix)]
+        }
+
+        var merged = [pairs[0]]
+        for pair in pairs.dropFirst() {
+            let last = merged[merged.count - 1]
+            if last.old.upperBound == pair.old.lowerBound {
+                merged[merged.count - 1] = (last.old.lowerBound..<pair.old.upperBound, last.new.lowerBound..<pair.new.upperBound)
+            } else {
+                merged.append(pair)
+            }
+        }
+        return merged
+    }
+}
+
+nonisolated extension Range<Int> {
+    func shifted(by offset: Int) -> Range<Int> {
+        (lowerBound + offset)..<(upperBound + offset)
+    }
 }
 
 nonisolated struct TextBuffer: Sendable {
@@ -56,6 +112,8 @@ nonisolated struct TextBuffer: Sendable {
     private var redoStack: [Transaction] = []
     /// Non-nil while inside `transact`.
     private var openTransaction: Transaction?
+    /// True while the top undo step was made by `transact(coalesce: true)` and nothing has happened since.
+    private var lastStepIsCoalescing = false
 
     /// Undo keeps whole Rope versions; they share every node an edit didn't touch, so each entry costs roughly
     /// the edited path, not the document.
@@ -119,12 +177,17 @@ nonisolated struct TextBuffer: Sendable {
             openTransaction!.edits.append(edit)
         } else {
             undoStack.append(Transaction(before: before, after: text, edits: [edit]))
+            lastStepIsCoalescing = false
         }
         return edit
     }
 
-    /// Runs `body` as one undo step. Nested calls fold into the outermost transaction.
-    mutating func transact(_ body: (inout TextBuffer) -> Void) {
+    /// Runs `body` as one undo step. Nested calls fold into the outermost transaction, and their `coalesce` is ignored.
+    ///
+    /// With `coalesce: true`, the edits join the previous undo step if that step was also made with `coalesce: true`
+    /// and nothing else (an edit, undo, or redo) has happened since. The caller decides which edits belong together,
+    /// e.g. adjacent keystrokes; call `breakUndoCoalescing()` when the next one shouldn't join.
+    mutating func transact(coalesce: Bool = false, _ body: (inout TextBuffer) -> Void) {
         guard openTransaction == nil else {
             body(&self)
             return
@@ -133,7 +196,18 @@ nonisolated struct TextBuffer: Sendable {
         body(&self)
         guard var transaction = openTransaction.take(), !transaction.edits.isEmpty else { return }
         transaction.after = text
+        if coalesce, lastStepIsCoalescing, var last = undoStack.popLast() {
+            last.edits += transaction.edits
+            last.after = text
+            transaction = last
+        }
         undoStack.append(transaction)
+        lastStepIsCoalescing = coalesce
+    }
+
+    /// Makes the next `transact(coalesce: true)` start a new undo step.
+    mutating func breakUndoCoalescing() {
+        lastStepIsCoalescing = false
     }
 
     // MARK: Undo
@@ -148,6 +222,7 @@ nonisolated struct TextBuffer: Sendable {
         guard let transaction = undoStack.popLast() else { return nil }
         text = transaction.before
         version &+= 1
+        lastStepIsCoalescing = false
         redoStack.append(transaction)
         return transaction.edits.reversed().map(\.inverted)
     }
@@ -159,6 +234,7 @@ nonisolated struct TextBuffer: Sendable {
         guard let transaction = redoStack.popLast() else { return nil }
         text = transaction.after
         version &+= 1
+        lastStepIsCoalescing = false
         undoStack.append(transaction)
         return transaction.edits
     }
